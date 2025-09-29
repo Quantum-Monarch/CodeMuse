@@ -1,12 +1,12 @@
 import sys
-import json
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from ui.ui_main_window import Ui_MainWindow
 from ui.ui_review_window import Ui_reviewwindow
 from Ml_pipeline import*
+from styletransfer import *
 
-commentlist=[]
+
 class WorkerThread(QThread):
     finished=Signal(list)
     error=Signal(str)
@@ -19,9 +19,35 @@ class WorkerThread(QThread):
         try:
             self.progress.emit("Analyzing code structure...please wait⏳")
             comments=comment_code(self.file_path)
+            db = init_db()
+            if check_num():
+                for i in range(len(comments)):
+                    g=comments[i][3]
+                    comments[i][1]=generate_user_style_comment(comments[i][1],g)
             self.finished.emit(comments)
         except Exception as e:
             self.error.emit(f"Analysis failed:{str(e)}")
+
+class SaveThread(QThread):
+    finished=Signal(str)
+    error=Signal(str)
+    progress=Signal(str)
+    def __init__(self,training_data):
+        super().__init__()
+        self.db=None
+        self.training_data=training_data
+
+    def run(self):
+        try:
+            self.progress.emit("saving user comments to file..please wait")
+            db= init_db()
+            for n in self.training_data:
+                save_edit(db,n["original_comment"],n["edited_comment"],n["embedding"])
+            main()
+            self.finished.emit("finished saving")
+        except Exception as e:
+            self.error.emit(f"saving comments failed:{str(e)}")
+
 
 
 
@@ -63,7 +89,7 @@ class MainWindow(QMainWindow):#subclass QMainWindow so it behaves like a widget 
         QApplication.processEvents()
 
         self.worker_thread = WorkerThread(self.file)
-        self.worker_thread.finished.connect(self.on_finished)
+        self.worker_thread.finished.connect(self.on_finished)################
         self.worker_thread.error.connect(self.on_error)
         self.worker_thread.progress.connect(self.on_progress)
         self.worker_thread.start()
@@ -85,7 +111,7 @@ class MainWindow(QMainWindow):#subclass QMainWindow so it behaves like a widget 
 
     def on_error(self,error):
         self.ui.button.setEnabled(True)
-        self.ui.dragdroplabel.setText(f"analysis failed, Error: {error}")
+        self.ui.dragdroplabel.setText(error)
 
     def on_progress(self,progress):
         self.ui.dragdroplabel.setText(progress)
@@ -94,31 +120,32 @@ class MainWindow(QMainWindow):#subclass QMainWindow so it behaves like a widget 
 class ReviewWindow(QMainWindow):
     def __init__(self,commentlist,file_path, parent=None):
         super().__init__(parent)
+        self.save_thread = None
         self.ui = Ui_reviewwindow()
         self.ui.setupUi(self)
         self.file_path=file_path
-        self.text_edits,self.originalcomments,self.nodenames=reviewcomments(self.ui.scrollArea,commentlist)
+        self.text_edits, self.originalcomments,self.embeddings, self.nodenames = reviewcomments(self.ui.scrollArea, commentlist)
         self.ui.pushButton.clicked.connect(self.on_submit)
 
     def update_comments(self,newcommentlist):#update comments if submit is pressed multiple times
         for text in self.text_edits:
             text.deleteLater()#deletes old comment widgets
-        self.text_edits=reviewcomments(self.ui.scrollArea,newcommentlist)#creates new widgets
-        self.originalcomments = [commentlist[i][1] for i in range(len(commentlist))]
+        self.text_edits,self.originalcomments,self.embeddings,self.nodenames=reviewcomments(self.ui.scrollArea,newcommentlist)#creates new widgets
 
-    def save_training_data(self, original_comments, edited_comments):
+    def save_training_data(self, original_comments, edited_comments,embeddings):
         training_data = []
-        for orig, edited in zip(original_comments, edited_comments):
+        for orig, edited,embeddings in zip(original_comments, edited_comments,embeddings):
             # Only save if user actually made changes
             if orig != edited:
-                training_data.append({
+                    training_data.append({
                     "original_comment": orig,
-                    "edited_comment": edited
+                    "edited_comment": edited,
+                    "embedding": embeddings,
                 })
-        # Append to file
-        with open("training_data.jsonl", "a") as f:
-            for item in training_data:
-                f.write(json.dumps(item) + "\n")
+        return training_data
+
+
+
 
     def write_to_file(self,file_path, comments_dict):
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -140,11 +167,43 @@ class ReviewWindow(QMainWindow):
         # Write back to file
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
+
+    def show_error(self, message):
+        QMessageBox.critical(self, "Error", message)
+
+    def on_error(self,error):
+        self.ui.pushButton.setEnabled(True)
+        self.show_error(f"saving edits failed{error}")
+
+    def show_progress(self, message):
+        QMessageBox.information(self, "Progress", message)
+
+    def show_finished(self,message):
+        QMessageBox.information(self, "Finished", message)
+
+    def on_progress(self,progress):
+        self.show_progress(progress)
+    def on_finished(self,finish):
+        self.ui.pushButton.setEnabled(True)
+        self.show_finished(finish)
+        
     def on_submit(self):
+        self.ui.pushButton.setEnabled(False)
         edited_comments = [te.toPlainText() for te in self.text_edits]
         commentdict = dict(zip(self.nodenames, edited_comments))
-        self.save_training_data(self.originalcomments,edited_comments)
+        training_data=self.save_training_data(self.originalcomments,edited_comments,self.embeddings)
         self.write_to_file(self.file_path, commentdict)
+        
+        QApplication.processEvents()
+
+        self.save_thread = SaveThread(training_data)
+        self.save_thread.finished.connect(self.on_finished)
+        self.save_thread.error.connect(self.on_error)
+        self.save_thread.progress.connect(self.on_progress)
+        self.save_thread.start()
+
+        self.close()
+
 
 app = QApplication(sys.argv)
 window = MainWindow()

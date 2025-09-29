@@ -3,6 +3,12 @@ import time
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, AutoModelForSeq2SeqLM
 from PySide6.QtWidgets import QLabel,QTextEdit,QVBoxLayout,QWidget
+from sentence_transformers import SentenceTransformer
+"""style transfer training support model"""
+modelembedding = SentenceTransformer("all-MiniLM-L6-v2")  # lightweight & fast
+
+def code_embedding(code_chunk):
+    return modelembedding.encode(code_chunk).tolist()
 
 def load_appropriate_model():
     flag=False
@@ -32,7 +38,7 @@ def load_appropriate_model():
         promptb=""
 
     return modelname, flag,prompta,promptb
-model_name, flag,prompta,promptb = load_appropriate_model()
+model_name, flag, prompta, promptb = load_appropriate_model()
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left"
@@ -47,10 +53,10 @@ else:
     comment_generator= pipeline("text-generation",model=model,tokenizer=tokenizer)
 
 
-def get_classes(tree,source):
+def get_classes(tree, source):
     classes=[]
     for node in tree.body:
-        if isinstance(node,ast.ClassDef):
+        if isinstance(node, ast.ClassDef):
             start_line=node.lineno-1
             end_line=getattr(node, "end_lineno", start_line+10)
             code_lines=source.splitlines()[start_line:end_line]
@@ -59,10 +65,10 @@ def get_classes(tree,source):
 
     return classes
 
-def get_functions(tree,source):
+def get_functions(tree, source):
     functions=[]
     for node in tree.body:
-        if isinstance(node,ast.FunctionDef):
+        if isinstance(node, ast.FunctionDef):
             start_line=node.lineno-1
             end_line=getattr(node, "end_lineno", start_line+10)
             code_lines=source.splitlines()[start_line:end_line]
@@ -70,13 +76,14 @@ def get_functions(tree,source):
             functions.append((node.name,chunk_code))
 
     return functions
-def reviewcomments(scroll_area,commentlist):
+def reviewcomments(scroll_area, commentlist):
     container=QWidget()
     layout=QVBoxLayout(container)
 
     textedits=[]
-    firstlines=[]
+    embeddings=[]
     nodenames=[]
+    origcomments=[]
 
     for comment in commentlist:
         #the code snippet
@@ -87,15 +94,17 @@ def reviewcomments(scroll_area,commentlist):
         code_comment=QTextEdit(comment[1])
         layout.addWidget(code_comment)
         textedits.append(code_comment)
-        #the first line
-        firstlines.append(comment[2])
-        nodenames.append(comment[3])
+        #the embeddings and node names, original comment
+        origcomments.append(comment[1])
+        embeddings.append(comment[3])
+        nodenames.append(comment[2])
     scroll_area.setWidget(container)
     scroll_area.setWidgetResizable(True)
-    return textedits,firstlines,nodenames
+    return textedits, origcomments,embeddings, nodenames
 
 
-def comment_code(file,prompta=prompta,promptb=promptb):
+
+def comment_code(file, prompta=prompta, promptb=promptb):
     with open(file, "r") as f:
         source = f.read()
     tree = ast.parse(source)
@@ -119,7 +128,7 @@ def comment_code(file,prompta=prompta,promptb=promptb):
     print(f"comment generated in {end-start} seconds!")
     for i,result in enumerate(results):
         text=result['generated_text'].strip()
-        firstlines=(chunks[i][1]).split('\n')[0].strip()
-        commentlist.append((chunks[i][1],text,firstlines,chunks[i][0]))
+        embedding=code_embedding(chunks[i][1])
+        commentlist.append([chunks[i][1],text,chunks[i][0],embedding])
 
     return commentlist
