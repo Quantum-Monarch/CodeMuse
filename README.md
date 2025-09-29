@@ -11,6 +11,23 @@ AI-powered code documentation tool that generates professional docstrings and le
 - **🔍 AST-Powered Analysis** - Deep code understanding through abstract syntax trees
 - **📝 Real-Time Editing** - Review and refine AI-generated comments
 
+## New Feature: Personalized Style Transfer
+
+**Adapt comments to your style**:
+
+The app now learns from your edits and fine-tunes a local model to generate docstrings in your personal writing style.
+
+**How it works**:
+
+- Your edits to generated comments are stored locally in a SQLite database.
+
+- Once enough examples are collected, the system fine-tunes a local model to reflect your style.
+
+- Embeddings of code are clustered to provide context-aware style adaptation, so comments match the type of code being documented.
+
+**Fully offline**: No API calls or cloud services are required—your code and style data stay local
+
+
 ## 🛠️ Tech Stack
 
 - **PySide6** - Modern Qt-based GUI framework
@@ -44,9 +61,9 @@ AI-powered code documentation tool that generates professional docstrings and le
 
 
 ## 🏗️ Architecture
- CodeMuse Architecture:
-1. File Input → 2. AST Parsing → 3. Model Selection → 
- 4. AI Documentation → 5. User Review → 6. Style Learning
+ **CodeMuse Architecture**:
+
+1.File Input → 2. AST Parsing → 3. Model Selection →4. AI Documentation → 5. User Review → 6. Style Learning
 
 ## 🤝 Contributing
 This project demonstrates:
@@ -62,6 +79,7 @@ This project demonstrates:
 
 ## 🏆 Portfolio Highlight
 This project showcases advanced skills in:
+
 - Full-stack desktop application development
 
 - ML/NLP integration with traditional software
